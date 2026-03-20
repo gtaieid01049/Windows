@@ -1,44 +1,60 @@
-name: Remote Desktop with Tailscale
-on: workflow_dispatch # Allows you to start it manually
+name: Windows-RDP-Tailscale
+on: 
+  workflow_dispatch: # Allows you to start it manually from the Actions tab
 
 jobs:
-  rdp-session:
+  build:
     runs-on: windows-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install & Connect Tailscale
+      - name: 1. Install & Connect Tailscale
         shell: powershell
         run: |
-          # Install Tailscale
+          # Download and Install Tailscale
           $dest = "$env:TEMP\tailscale-setup.exe"
           Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile $dest
           Start-Process -FilePath $dest -ArgumentList "/quiet", "/norestart" -Wait
           
-          # Auth and Connect
+          # Connect to Tailscale (Uses your Secret Key)
+          # Make sure you added TAILSCALE_AUTH_KEY to your GitHub Secrets!
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner
           
-          # Show the Tailscale IP so you know where to connect
+          # Display the IP Address for connection
           $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-          Write-Host "CONNECTION IP: $tsIP"
+          Write-Host "-------------------------------------------"
+          Write-Host "CONNECT TO THIS IP: $tsIP"
+          Write-Host "-------------------------------------------"
 
-      - name: Configure RDP User
+      - name: 2. Configure RDP User & Security
         shell: powershell
         run: |
-          $Password = "runneradmin123!" # Change this or use another secret!
-          $User = "runner"
-          $PasswordSecure = ConvertTo-SecureString $Password -AsPlainText -Force
-          
-          # Ensure RDP is enabled
+          $User = "RDPAdmin"
+          $Pass = "Gamer#2026#Secure!" # Strong password to pass Windows policy
+          $SecPass = ConvertTo-SecureString $Pass -AsPlainText -Force
+
+          # Enable RDP in Registry
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          Write-Host "RDP is ready. User: $User | Pass: $Password"
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
 
-      - name: Keep Alive (6 Hours)
+          # Create User or Update Password if exists
+          if (!(Get-LocalUser -Name $User -ErrorAction SilentlyContinue)) {
+              New-LocalUser -Name $User -Password $SecPass -FullName "Admin" -Description "RDP Account"
+          } else {
+              Set-LocalUser -Name $User -Password $SecPass
+          }
+
+          # Add to Admin and Remote Desktop Groups
+          Add-LocalGroupMember -Group "Administrators" -Member "$User" -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "$User" -ErrorAction SilentlyContinue
+          
+          # Final Success Message
+          Write-Host "--- LOGIN DETAILS ---"
+          Write-Host "Username: $User"
+          Write-Host "Password: $Pass"
+          Write-Host "--------------------"
+
+      - name: 3. Keep Runner Alive (6 Hours)
         shell: powershell
         run: |
-          Write-Host "Runner is active. Connect via RDP using the Tailscale IP."
-          Start-Sleep -Seconds 21600 # Keeps the runner open for 6 hours
+          Write-Host "The RDP session is live. Do not close this Action."
+          Start-Sleep -Seconds 21600 # 6 Hours timer
           
