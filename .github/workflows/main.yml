@@ -1,58 +1,44 @@
-name: Windows RDP via Tailscale
-
-# Triggers the workflow manually
-on: 
-  workflow_dispatch:
+name: Remote Desktop with Tailscale
+on: workflow_dispatch # Allows you to start it manually
 
 jobs:
-  build:
+  rdp-session:
     runs-on: windows-latest
-    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v2
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          # Optional: You can set a specific hostname for the GitHub runner
-          hostname: github-windows-runner
-
-      - name: Create User 'raju' and Enable RDP
+      - name: Install & Connect Tailscale
         shell: powershell
         run: |
-          Write-Host "Creating user 'raju'..." -ForegroundColor Cyan
-          $Password = ConvertTo-SecureString "${{ secrets.RAJU_PASSWORD }}" -AsPlainText -Force
-          New-LocalUser -Name "raju" -Password $Password -FullName "Raju RDP"
+          # Install Tailscale
+          $dest = "$env:TEMP\tailscale-setup.exe"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile $dest
+          Start-Process -FilePath $dest -ArgumentList "/quiet", "/norestart" -Wait
           
-          Write-Host "Adding 'raju' to Administrators and RDP groups..." -ForegroundColor Cyan
-          Add-LocalGroupMember -Group "Administrators" -Member "raju"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "raju"
+          # Auth and Connect
+          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner
           
-          Write-Host "Enabling Remote Desktop..." -ForegroundColor Cyan
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+          # Show the Tailscale IP so you know where to connect
+          $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
+          Write-Host "CONNECTION IP: $tsIP"
+
+      - name: Configure RDP User
+        shell: powershell
+        run: |
+          $Password = "runneradmin123!" # Change this or use another secret!
+          $User = "runner"
+          $PasswordSecure = ConvertTo-SecureString $Password -AsPlainText -Force
+          
+          # Ensure RDP is enabled
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -value 1
           
-          Write-Host "Setup Complete!" -ForegroundColor Green
+          Write-Host "RDP is ready. User: $User | Pass: $Password"
 
-      - name: Get Tailscale IP
+      - name: Keep Alive (6 Hours)
         shell: powershell
         run: |
-          $ip = tailscale ip -4
-          Write-Host "========================================="
-          Write-Host "Connect to RDP using:"
-          Write-Host "IP Address: $ip"
-          Write-Host "Username: raju"
-          Write-Host "Password: <Your RAJU_PASSWORD Secret>"
-          Write-Host "========================================="
-
-      - name: Keep Runner Alive
-        shell: powershell
-        run: |
-          Write-Host "Keeping the GitHub Action alive. You can now connect."
-          Write-Host "Note: GitHub Actions will forcibly terminate this job after 6 hours."
-          # Infinite loop to prevent the workflow from completing and shutting down the VM
-          while ($true) { Start-Sleep -Seconds 300 }
+          Write-Host "Runner is active. Connect via RDP using the Tailscale IP."
+          Start-Sleep -Seconds 21600 # Keeps the runner open for 6 hours
           
