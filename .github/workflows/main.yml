@@ -1,44 +1,22 @@
-name: Remote Desktop with Tailscale
-on: workflow_dispatch # Allows you to start it manually
-
-jobs:
-  rdp-session:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Install & Connect Tailscale
+      - name: Configure New RDP User
         shell: powershell
         run: |
-          # Install Tailscale
-          $dest = "$env:TEMP\tailscale-setup.exe"
-          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile $dest
-          Start-Process -FilePath $dest -ArgumentList "/quiet", "/norestart" -Wait
+          $NewUser = "Raju"
+          $NewPass = "Gamer@2026!"
           
-          # Auth and Connect
-          & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner
+          # Create the new user account
+          $PasswordSecure = ConvertTo-SecureString $NewPass -AsPlainText -Force
+          New-LocalUser "$NewUser" -Password $PasswordSecure -FullName "Raju Remote" -Description "New RDP Login"
           
-          # Show the Tailscale IP so you know where to connect
-          $tsIP = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
-          Write-Host "CONNECTION IP: $tsIP"
+          # Add user to Remote Desktop and Admin groups
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "$NewUser"
+          Add-LocalGroupMember -Group "Administrators" -Member "$NewUser"
 
-      - name: Configure RDP User
-        shell: powershell
-        run: |
-          $Password = "RunnerRDP123!" # Change this or use another secret!
-          $User = "runneradmin"
-          $PasswordSecure = ConvertTo-SecureString $Password -AsPlainText -Force
-          
-          # Ensure RDP is enabled
+          # Ensure RDP is active
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           
-          Write-Host "RDP is ready. User: $User | Pass: $Password"
-
-      - name: Keep Alive (6 Hours)
-        shell: powershell
-        run: |
-          Write-Host "Runner is active. Connect via RDP using the Tailscale IP."
-          Start-Sleep -Seconds 21600 # Keeps the runner open for 6 hours
+          Write-Host "NEW LOGIN CREATED:"
+          Write-Host "Username: $NewUser"
+          Write-Host "Password: $NewPass"
           
