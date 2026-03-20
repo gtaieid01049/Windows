@@ -1,22 +1,26 @@
-      - name: Configure New RDP User
+      - name: Configure RDP User
         shell: powershell
         run: |
-          $NewUser = "Raju"
-          $NewPass = "Gamer@2026!"
+          $User = "RDPAdmin"
+          $Pass = "GitHub_Remote_99!" # Strong password to avoid red line
           
-          # Create the new user account
-          $PasswordSecure = ConvertTo-SecureString $NewPass -AsPlainText -Force
-          New-LocalUser "$NewUser" -Password $PasswordSecure -FullName "Raju Remote" -Description "New RDP Login"
-          
-          # Add user to Remote Desktop and Admin groups
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "$NewUser"
-          Add-LocalGroupMember -Group "Administrators" -Member "$NewUser"
-
-          # Ensure RDP is active
+          # 1. Force RDP Enable
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          
-          Write-Host "NEW LOGIN CREATED:"
-          Write-Host "Username: $NewUser"
-          Write-Host "Password: $NewPass"
+
+          # 2. Clear old user to prevent "Already Exists" error
+          if (Get-LocalUser -Name $User -ErrorAction SilentlyContinue) {
+              Remove-LocalUser -Name $User
+          }
+
+          # 3. Create User with Strong Password
+          $PasswordSecure = ConvertTo-SecureString $Pass -AsPlainText -Force
+          try {
+              New-LocalUser "$User" -Password $PasswordSecure -FullName "Admin" -Description "RDP" -ErrorAction Stop
+              Add-LocalGroupMember -Group "Administrators" -Member "$User"
+              Add-LocalGroupMember -Group "Remote Desktop Users" -Member "$User"
+              Write-Host "✅ SUCCESS: User $User created."
+          } catch {
+              Write-Error "❌ FAILED: Check if your password is strong enough."
+          }
           
